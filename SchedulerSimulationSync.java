@@ -5,7 +5,7 @@ import java.util.Map;
 import java.util.HashMap;
 import java.util.Random;
 import java.util.concurrent.locks.ReentrantLock;
-// TODO (Feature 3):               import java.util.concurrent.Semaphore;
+import java.util.concurrent.Semaphore;
 
 // ANSI Color Codes for enhanced terminal output (same as Assignment 1)
 class Colors {
@@ -69,48 +69,80 @@ class SharedStats {
     static final java.util.concurrent.atomic.AtomicInteger busyWaitPolls = new java.util.concurrent.atomic.AtomicInteger(
             0);
 
+       // Feature 2: one lock PER shared variable (the three variables are independent,
+// so a thread updating one of them must not block a thread updating another)
+private static final ReentrantLock contextSwitchLock = new ReentrantLock();
+private static final ReentrantLock completedLock = new ReentrantLock();
+private static final ReentrantLock serviceTimeLock = new ReentrantLock();     
     // TODO Feature 2: declare the lock(s) protecting the three shared variables
     // above here.
     // Think about it: ONE lock for the three variables, or ONE lock PER variable?
     // (you must justify it in MY_WORK.md)
-
+    
     public static void incrementContextSwitch() {
-        // TODO Feature 2: protect this critical section
-        int tmp = contextSwitchCount; // 1) read
-        RaceWindow.pause(); // <- another thread can read the SAME value here
-        contextSwitchCount = tmp + 1; // 2) write (one increment is lost if someone else did the same)
+    // Feature 2: read + pause + write is a critical section on contextSwitchCount
+    contextSwitchLock.lock();
+    try {
+        int tmp = contextSwitchCount;       // 1) read
+        RaceWindow.pause();                 // no other thread can enter here now
+        contextSwitchCount = tmp + 1;       // 2) write
+    } finally {
+        contextSwitchLock.unlock();         // always released
     }
+}
 
     public static void incrementCompletedProcess() {
-        // TODO Feature 2: protect this critical section
+    // Feature 2: same read-pause-write pattern protected by its onw lock
+    completedLock.lock();
+    try {
         int tmp = completedProcessCount;
         RaceWindow.pause();
         completedProcessCount = tmp + 1;
+    } finally {
+        completedLock.unlock();
     }
+}
 
     public static void addServiceTime(int ms) {
-        // TODO Feature 2: protect this critical section
+    // Feature 2: protected by serviceTimeLock
+    serviceTimeLock.lock();
+    try {
         long tmp = totalServiceTime;
         RaceWindow.pause();
         totalServiceTime = tmp + ms;
+    } finally {
+        serviceTimeLock.unlock();
     }
-
+}
     // Readers must also be protected (a read in the middle of an update is not safe
     // either)
     public static int getCompletedProcessCount() {
-        // TODO Feature 2: protect this read
+    // Feature 2: a read in the middle of an update is not safe either
+    completedLock.lock();
+    try {
         return completedProcessCount;
+    } finally {
+        completedLock.unlock();
     }
+}
 
-    public static int getContextSwitchCount() {
-        // TODO Feature 2: protect this read
+public static int getContextSwitchCount() {
+    contextSwitchLock.lock();
+    try {
         return contextSwitchCount;
+    } finally {
+        contextSwitchLock.unlock();
     }
+}
 
-    public static long getTotalServiceTime() {
-        // TODO Feature 2: protect this read
+public static long getTotalServiceTime() {
+    serviceTimeLock.lock();
+    try {
         return totalServiceTime;
+    } finally {
+        serviceTimeLock.unlock();
     }
+}
 }
 
 // ⚠️ THE READY QUEUE: shared by ALL the CPU threads ⚠️
